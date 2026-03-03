@@ -12,6 +12,7 @@ import {
 
 const env = window.__ENV || {};
 const firebaseConfig = env.firebase || {};
+const stockAlertEmailConfig = env.stockAlertEmail || {};
 
 const statusEl = document.getElementById("firebaseStatus");
 const toastEl = document.getElementById("toast");
@@ -25,6 +26,9 @@ const addProfileBtn = document.getElementById("addProfileBtn");
 
 const PROFILE_LIST_KEY = "ims.profile.list";
 const PROFILE_ACTIVE_KEY = "ims.profile.active";
+const STOCK_ALERT_SIGNATURE_KEY = "ims.stockAlert.lastSignature";
+
+const STOCK_ALERT_DEFAULT_RECIPIENT = "phoenixpathlabs@gmail.com";
 
 const isConfigured =
   firebaseConfig.apiKey &&
@@ -192,6 +196,143 @@ function isoDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function escapeHtmlForEmail(value) {
+  return escapeHTML(value);
+}
+
+function isStockEmailConfigured() {
+  return Boolean(
+    stockAlertEmailConfig.apiUrl
+    && !String(stockAlertEmailConfig.apiUrl).includes("YOUR_")
+  );
+}
+
+function stockAlertSignature(lowStockItems, outStockItems) {
+  const low = lowStockItems
+    .map((item) => `${item.id}:${toNumber(item.stockQty)}`)
+    .sort()
+    .join("|");
+  const out = outStockItems
+    .map((item) => `${item.id}:${toNumber(item.stockQty)}`)
+    .sort()
+    .join("|");
+  return `LOW[${low}]__OUT[${out}]`;
+}
+
+function buildStockRows(items, modeLabel) {
+  if (!items.length) {
+    return `
+      <tr>
+        <td colspan="4" style="padding:10px;border:1px solid #e6e0d7;color:#5a6b66;text-align:center;">No ${modeLabel.toLowerCase()} items</td>
+      </tr>
+    `;
+  }
+
+  return items
+    .map((item) => {
+      const unit = getUnitName(item.unitId) || "Unit";
+      return `
+        <tr>
+          <td style="padding:10px;border:1px solid #e6e0d7;">${escapeHtmlForEmail(item.name)}</td>
+          <td style="padding:10px;border:1px solid #e6e0d7;">${escapeHtmlForEmail(getCategoryName(item.categoryId))}</td>
+          <td style="padding:10px;border:1px solid #e6e0d7;">${toNumber(item.stockQty)} ${escapeHtmlForEmail(unit)}</td>
+          <td style="padding:10px;border:1px solid #e6e0d7;">${modeLabel}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function buildStockAlertEmailHtml(lowStockItems, outStockItems) {
+  const now = new Date();
+  const generatedOn = dateFormatter.format(now);
+  const totalAlerts = lowStockItems.length + outStockItems.length;
+
+  return `
+    <div style="font-family:Arial,Helvetica,sans-serif;background:#f7f1e8;padding:24px;color:#1f2a2a;">
+      <div style="max-width:820px;margin:0 auto;background:#ffffff;border:1px solid #e6e0d7;border-radius:14px;overflow:hidden;">
+        <div style="background:#1f4d4c;color:#fff;padding:18px 22px;">
+          <div style="font-size:20px;font-weight:700;">Penguin Biotechnologies</div>
+          <div style="font-size:13px;opacity:.9;">Inventory Stock Alert Summary</div>
+        </div>
+        <div style="padding:20px 22px;">
+          <p style="margin:0 0 10px;font-size:14px;">Hello Team,</p>
+          <p style="margin:0 0 12px;font-size:14px;">This is a consolidated inventory alert email from IMS. Please review the low and out-of-stock items listed below.</p>
+          <div style="margin:0 0 14px;padding:10px 12px;background:#f0e8dc;border:1px solid #e6e0d7;border-radius:10px;font-size:13px;">
+            <strong>Total Alerts:</strong> ${totalAlerts} &nbsp; | &nbsp;
+            <strong>Low Stock:</strong> ${lowStockItems.length} &nbsp; | &nbsp;
+            <strong>Out of Stock:</strong> ${outStockItems.length}<br/>
+            <strong>Generated:</strong> ${escapeHtmlForEmail(generatedOn)}
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#f7f1e8;">
+                <th style="padding:10px;border:1px solid #e6e0d7;text-align:left;">Item</th>
+                <th style="padding:10px;border:1px solid #e6e0d7;text-align:left;">Category</th>
+                <th style="padding:10px;border:1px solid #e6e0d7;text-align:left;">Current Stock</th>
+                <th style="padding:10px;border:1px solid #e6e0d7;text-align:left;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${buildStockRows(lowStockItems, "Low Stock")}
+              ${buildStockRows(outStockItems, "Out of Stock")}
+            </tbody>
+          </table>
+          <p style="margin:14px 0 0;font-size:12px;color:#5a6b66;">This is an automated alert from IMS.</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function maybeSendStockAlertEmail(lowStockItems, outStockItems) {
+  if (!isStockEmailConfigured()) return;
+
+  const total = lowStockItems.length + outStockItems.length;
+  if (!total) return;
+
+  const signature = stockAlertSignature(lowStockItems, outStockItems);
+  const previousSignature = localStorage.getItem(STOCK_ALERT_SIGNATURE_KEY);
+  if (signature === previousSignature) return;
+
+  const recipient = stockAlertEmailConfig.toEmail || STOCK_ALERT_DEFAULT_RECIPIENT;
+  const emailHtml = buildStockAlertEmailHtml(lowStockItems, outStockItems);
+
+  const payload = {
+    toEmail: recipient,
+    subject: `IMS Stock Alert Summary (${total} items)`,
+    html: emailHtml,
+    totalAlerts: total,
+    lowStockCount: lowStockItems.length,
+    outStockCount: outStockItems.length,
+    generatedAt: dateFormatter.format(new Date())
+  };
+
+  try {
+    const headers = {
+      "Content-Type": "application/json"
+    };
+
+    if (stockAlertEmailConfig.apiKey && !String(stockAlertEmailConfig.apiKey).includes("YOUR_")) {
+      headers["x-alert-key"] = stockAlertEmailConfig.apiKey;
+    }
+
+    const response = await fetch(stockAlertEmailConfig.apiUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error("Email send failed");
+    }
+
+    localStorage.setItem(STOCK_ALERT_SIGNATURE_KEY, signature);
+  } catch (error) {
+    console.error("Stock alert email error", error);
+  }
 }
 
 function ensureFirebase() {
@@ -1274,6 +1415,8 @@ function renderNotifications() {
       text: `${item.name} is out of stock`
     });
   });
+
+  void maybeSendStockAlertEmail(lowStockItems, outStockItems);
 
   notificationCount.textContent = String(alerts.length);
 
