@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IMS - Inventory Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=Space+Grotesk:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="backdrop"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">IMS</div>
+      <div class="brand-sub">Inventory & Stock Intelligence</div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="inventory-config">Inventory Config</button>
+      <button class="nav-btn" data-page="inventory-stats">Inventory Stats</button>
+    </nav>
+    <div class="header-controls">
+      <div class="notification-center">
+        <button type="button" id="notificationToggle" class="mini-btn notification-toggle">
+          Notifications
+          <span id="notificationCount" class="notification-count">0</span>
+        </button>
+        <div id="notificationPanel" class="notification-panel">
+          <div class="notification-head">Inventory Alerts</div>
+          <div id="notificationList" class="notification-list"></div>
+        </div>
+      </div>
+      <div class="profile-picker">
+        <select id="profileSelect" aria-label="Select profile">
+          <option value="">Select Profile</option>
+        </select>
+        <input type="text" id="profileNameInput" placeholder="Add profile name" />
+        <button type="button" id="addProfileBtn" class="mini-btn">Add</button>
+      </div>
+      <div class="status" id="firebaseStatus">Firebase: not configured</div>
+    </div>
+  </header>
+
+  <main>
+    <section class="page active" id="dashboard">
+      <div class="page-head">
+        <h1>Dashboard</h1>
+        <p>Quick actions for purchases, consumption, returns, and adjustments.</p>
+      </div>
+
+      <div class="feature-grid">
+        <button class="feature-btn active" data-feature="purchase">Purchase</button>
+        <button class="feature-btn" data-feature="consumption">Consumption</button>
+        <button class="feature-btn" data-feature="returns">Return / Replacement</button>
+        <button class="feature-btn" data-feature="adjustment">Adjustment</button>
+      </div>
+
+      <div class="stats-grid dashboard-summary">
+        <div class="stat-card">
+          <h3>Total Items</h3>
+          <div class="stat-value" id="dashTotalItems">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Low Stock</h3>
+          <div class="stat-value" id="dashLowStock">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Out of Stock</h3>
+          <div class="stat-value" id="dashOutStock">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Total Spend</h3>
+          <div class="stat-value" id="dashSpend">₹0.00</div>
+        </div>
+      </div>
+
+      <div class="feature-panel active" data-feature-panel="purchase">
+        <div class="card">
+          <h2>Purchase</h2>
+          <form id="purchaseForm">
+            <div class="form-row">
+              <label>Item (Vendor shown)</label>
+              <select id="purchaseItem" required></select>
+            </div>
+            <div class="form-row">
+              <label>Quantity</label>
+              <input type="number" id="purchaseQty" min="1" value="1" required />
+            </div>
+            <div class="form-row">
+              <label>Total Amount</label>
+              <input type="number" id="purchaseTotal" min="0" step="0.01" required />
+            </div>
+            <button type="submit" class="primary">Save Purchase</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="feature-panel" data-feature-panel="consumption">
+        <div class="card">
+          <h2>Consumption</h2>
+          <p class="muted">Use plus to consume, minus to undo. Slide-based categories consume using their configured units-per-slide value.</p>
+          <div class="form-row consumption-search-row">
+            <label>Search Item</label>
+            <input type="text" id="consumptionSearch" placeholder="Search by item name..." />
+          </div>
+          <div id="consumptionList" class="consumption-list"></div>
+        </div>
+      </div>
+
+      <div class="feature-panel" data-feature-panel="returns">
+        <div class="card">
+          <h2>Return / Replacement</h2>
+          <form id="returnForm">
+            <div class="form-row">
+              <label>Item</label>
+              <select id="returnItem" required></select>
+            </div>
+            <div class="form-row">
+              <label>Quantity</label>
+              <input type="number" id="returnQty" min="1" value="1" required />
+            </div>
+            <div class="form-row">
+              <label>Reason</label>
+              <input type="text" id="returnReason" placeholder="Damaged, incorrect size, etc." required />
+            </div>
+            <button type="submit" class="primary">Submit Return</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="feature-panel" data-feature-panel="adjustment">
+        <div class="card">
+          <h2>Adjustment</h2>
+          <form id="adjustmentForm">
+            <div class="form-row">
+              <label>Item</label>
+              <select id="adjustItem" required></select>
+            </div>
+            <div class="form-row">
+              <label>Adjustment Type</label>
+              <select id="adjustType">
+                <option value="decrease">Decrease (Wastage / Expiry)</option>
+                <option value="increase">Increase (Found Stock)</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <label>Quantity</label>
+              <input type="number" id="adjustQty" min="1" value="1" required />
+            </div>
+            <div class="form-row">
+              <label>Reason</label>
+              <input type="text" id="adjustReason" placeholder="Expiry, wastage, audit correction" required />
+            </div>
+            <button type="submit" class="primary">Apply Adjustment</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="inventory-config">
+      <div class="page-head">
+        <h1>Inventory Configuration</h1>
+        <p>Create categories, units, vendors, and items.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Item Category</h2>
+          <form id="categoryForm">
+            <div class="form-row">
+              <label>Category Name</label>
+              <input type="text" id="categoryName" required />
+            </div>
+            <div class="form-row">
+              <label>Description</label>
+              <textarea id="categoryDescription" rows="3"></textarea>
+            </div>
+            <div class="form-row toggle-row">
+              <label>
+                <input type="checkbox" id="categorySlideBased" />
+                Slide Based Consumption (optional)
+              </label>
+            </div>
+            <div id="categorySlideConfig" class="form-row-group">
+              <div class="form-row">
+                <label>Slide Unit</label>
+                <select id="categorySlideUnit"></select>
+              </div>
+              <div class="form-row">
+                <label>Units Per Slide</label>
+                <input type="number" id="categorySlideValue" min="0.0001" step="0.0001" placeholder="e.g. 50" />
+              </div>
+            </div>
+            <button type="submit" class="primary">Create Category</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Item Unit</h2>
+          <form id="unitForm">
+            <div class="form-row">
+              <label>Unit Display Name</label>
+              <input type="text" id="unitDisplay" placeholder="Km" required />
+            </div>
+            <div class="form-row">
+              <label>Unit Name</label>
+              <input type="text" id="unitName" placeholder="KILOMETER" required />
+            </div>
+            <button type="submit" class="primary">Create Unit</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Vendor</h2>
+          <form id="vendorForm">
+            <div class="form-row">
+              <label>Vendor Name</label>
+              <input type="text" id="vendorName" required />
+            </div>
+            <div class="form-row">
+              <label>Vendor Address</label>
+              <input type="text" id="vendorAddress" required />
+            </div>
+            <div class="form-row">
+              <label>Mobile Number</label>
+              <input type="tel" id="vendorMobile" required />
+            </div>
+            <div class="form-row">
+              <label>Mail ID</label>
+              <input type="email" id="vendorEmail" required />
+            </div>
+            <div class="form-row">
+              <label>Opening Balance</label>
+              <input type="number" id="vendorOpening" min="0" step="0.01" value="0" />
+            </div>
+            <button type="submit" class="primary">Create Vendor</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Item</h2>
+          <form id="itemForm">
+            <div class="form-row">
+              <label>Select Category</label>
+              <select id="itemCategory" required></select>
+            </div>
+            <div class="form-row">
+              <label>Select Unit</label>
+              <select id="itemUnit" required></select>
+            </div>
+            <div class="form-row">
+              <label>Select Vendor</label>
+              <select id="itemVendor" required></select>
+            </div>
+            <div class="form-row">
+              <label>Item Name</label>
+              <input type="text" id="itemName" required />
+            </div>
+            <div class="form-row toggle-row">
+              <label>
+                <input type="checkbox" id="itemHasExpiry" />
+                Checklist for Expiry (if applicable)
+              </label>
+            </div>
+            <div class="form-row" id="expiryRow">
+              <label>Expiry Date (optional)</label>
+              <input type="date" id="itemExpiryDate" />
+            </div>
+            <div class="form-row">
+              <label>Opening Quantity</label>
+              <input type="number" id="itemOpeningQty" min="0" value="0" required />
+            </div>
+            <div class="form-row">
+              <label>Price</label>
+              <input type="number" id="itemPrice" min="0" step="0.01" required />
+            </div>
+            <div class="form-row">
+              <label>Re-order Quantity Level</label>
+              <input type="number" id="itemReorder" min="0" value="0" required />
+            </div>
+            <button type="submit" class="primary">Create Item</button>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Excel Upload (IHC Marker)</h2>
+          <p class="muted">Upload columns: ITEM NAME, PACKED QTY, STOCK AVAILABLE, RATE. Items are saved as "ITEM NAME - PACKED QTY".</p>
+          <form id="excelImportForm">
+            <div class="form-row">
+              <label>Excel File</label>
+              <input type="file" id="excelFile" accept=".xlsx,.xls,.csv" required />
+            </div>
+            <button type="submit" class="primary">Upload Excel</button>
+          </form>
+        </div>
+
+        <div class="card config-items-card">
+          <h2>Items By Category</h2>
+          <p class="muted">View all items category-wise and use Edit, Config, or Manage to update details.</p>
+          <div id="configItemsList" class="config-items-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="page" id="inventory-stats">
+      <div class="page-head">
+        <h1>Inventory Stats</h1>
+        <p>Stock position, spend, and alerts.</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <h3>Total Items</h3>
+          <div class="stat-value" id="statTotalItems">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Low Stock</h3>
+          <div class="stat-value" id="statLowStock">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Out of Stock</h3>
+          <div class="stat-value" id="statOutStock">0</div>
+        </div>
+        <div class="stat-card">
+          <h3>Total Spend</h3>
+          <div class="stat-value" id="statSpend">₹0.00</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Low Stock Items</h2>
+          <div id="lowStockList" class="list"></div>
+        </div>
+        <div class="card">
+          <h2>Out of Stock Items</h2>
+          <div id="outStockList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Expiry Alerts</h2>
+          <div id="expiryList" class="list"></div>
+        </div>
+        <div class="card">
+          <h2>Recent Activity</h2>
+          <div id="activityList" class="list"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Analytics & Audits</h2>
+        <div class="stats-filters">
+          <div class="form-row">
+            <label>Range</label>
+            <select id="statsDatePreset">
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d" selected>Last 30 Days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>From</label>
+            <input type="date" id="statsDateFrom" />
+          </div>
+          <div class="form-row">
+            <label>To</label>
+            <input type="date" id="statsDateTo" />
+          </div>
+          <div class="form-row">
+            <label>Profile</label>
+            <select id="statsProfileFilter">
+              <option value="all">All Profiles</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Action</label>
+            <select id="statsActionFilter">
+              <option value="all">All Actions</option>
+              <option value="Purchase">Purchase</option>
+              <option value="Consumption">Consumption</option>
+              <option value="Return">Return</option>
+              <option value="Adjustment">Adjustment</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Category</label>
+            <select id="statsCategoryFilter">
+              <option value="all">All Categories</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Item Search</label>
+            <input type="text" id="statsItemSearch" placeholder="Type item name..." />
+          </div>
+          <div class="filter-actions">
+            <button type="button" id="statsResetFilters" class="secondary-btn">Reset</button>
+            <button type="button" id="statsExportCsv" class="primary">Export CSV</button>
+          </div>
+        </div>
+
+        <div class="stats-grid analytics-grid">
+          <div class="stat-card">
+            <h3>Filtered Events</h3>
+            <div class="stat-value" id="analyticsEventCount">0</div>
+          </div>
+          <div class="stat-card">
+            <h3>Purchase Qty</h3>
+            <div class="stat-value" id="analyticsPurchaseQty">0</div>
+          </div>
+          <div class="stat-card">
+            <h3>Net Consumed Qty</h3>
+            <div class="stat-value" id="analyticsConsumptionQty">0</div>
+          </div>
+          <div class="stat-card">
+            <h3>Net Stock Movement</h3>
+            <div class="stat-value" id="analyticsNetStock">0</div>
+          </div>
+          <div class="stat-card">
+            <h3>IHC Slides Used</h3>
+            <div class="stat-value" id="analyticsSlidesUsed">0</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h2>Top Consumed Items</h2>
+            <div id="analyticsTopConsumed" class="list"></div>
+          </div>
+          <div class="card">
+            <h2>Audit Trail (Filtered)</h2>
+            <div id="statsAuditList" class="audit-list"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Consumed Qty (All Items)</h2>
+          <div id="analyticsConsumedAll" class="audit-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="env.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
